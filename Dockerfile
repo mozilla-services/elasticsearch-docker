@@ -1,4 +1,3 @@
-# this version is based on alpine
 FROM elasticsearch:1.4.5
 USER root
 # uid 11002 because 1000 (elasticsearch) conflicts in our infra
@@ -9,7 +8,7 @@ RUN set -ex && for esdirs in config data logs; do \
         mkdir -p "$esdirs"; \
         chown -R elasticsearch-user:elasticsearch-user "$esdirs"; \
     done
-# no x-pack
+# no x-pack (not even relevant in 1.4.5?)
 ENV xpack.monitoring.enabled false
 ENV xpack.security.enabled false
 
