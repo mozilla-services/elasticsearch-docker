@@ -1,16 +1,80 @@
-FROM elasticsearch:1.4.5
-USER root
+# adapted from https://github.com/docker-library/elasticsearch/blob/2ceaacde5b9dcc3e15f5daa4b1a282bf0f190d2b/1.4/Dockerfile
+
+# 7-jre because: https://stackoverflow.com/questions/32058431/aws-java-sdk-aws-authentication-requires-a-valid-date-or-x-amz-date-header
+# library/java is deprecated in favor of openjdk (dockerhub)
+FROM openjdk:7-jre
+
+# grab gosu for easy step-down from root
+# taken from https://github.com/tianon/gosu/blob/master/INSTALL.md
+ENV GOSU_VERSION 1.10
+RUN set -ex; \
+    \
+    fetchDeps=' \
+    ca-certificates \
+    wget \
+    '; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends $fetchDeps; \
+    rm -rf /var/lib/apt/lists/*; \
+    \
+    dpkgArch="$(dpkg --print-architecture | awk -F- '{ print $NF }')"; \
+    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch"; \
+    wget -O /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc"; \
+    \
+    # verify the signature
+    export GNUPGHOME="$(mktemp -d)"; \
+    gpg --keyserver ha.pool.sks-keyservers.net --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \
+    gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \
+    rm -r "$GNUPGHOME" /usr/local/bin/gosu.asc; \
+    \
+    chmod +x /usr/local/bin/gosu; \
+    # verify that the binary works
+    gosu nobody true;
+
+# https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-repositories.html
+# https://packages.elasticsearch.org/GPG-KEY-elasticsearch
+RUN apt-key adv --keyserver ha.pool.sks-keyservers.net --recv-keys 46095ACC8548582C1A2699A9D27D666CD88E42B4
+
+ENV ELASTICSEARCH_MAJOR 1.4
+ENV ELASTICSEARCH_VERSION 1.4.5
+ENV ELASTICSEARCH_REPO_BASE http://packages.elasticsearch.org/elasticsearch/1.4/debian
+
+RUN echo "deb $ELASTICSEARCH_REPO_BASE stable main" > /etc/apt/sources.list.d/elasticsearch.list
+
+RUN set -x \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends elasticsearch=$ELASTICSEARCH_VERSION \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH /usr/share/elasticsearch/bin:$PATH
+
+WORKDIR /usr/share/elasticsearch
+
 # uid 11002 because 1000 (elasticsearch) conflicts in our infra
 RUN addgroup --gid 11002 elasticsearch-user
 RUN useradd --uid 11002 --gid 11002 --home /usr/share/elasticsearch elasticsearch-user
-# take ownership of things elasticsearch user normally owns
-RUN set -ex && for esdirs in config data logs; do \
-        mkdir -p "$esdirs"; \
-        chown -R elasticsearch-user:elasticsearch-user "$esdirs"; \
+
+RUN set -ex \
+    && for path in \
+    ./data \
+    ./logs \
+    ./config \
+    ./config/scripts \
+    ; do \
+    mkdir -p "$path"; \
+    chown -R elasticsearch-user:elasticsearch-user "$path"; \
     done
-# no x-pack (not even relevant in 1.4.5?)
-ENV xpack.monitoring.enabled false
-ENV xpack.security.enabled false
 
 RUN bin/plugin install elasticsearch/elasticsearch-cloud-aws/2.4.2
+
+COPY config ./config
+
+VOLUME /usr/share/elasticsearch/data
+
+COPY docker-entrypoint.sh /
+
+EXPOSE 9200 9300
+
 USER elasticsearch-user
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["elasticsearch"]
