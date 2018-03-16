@@ -11,10 +11,9 @@ fi
 # allow the container to be started with `--user`
 if [ "$1" = 'elasticsearch' -a "$(id -u)" = '0' ]; then
 	# Change the ownership of /usr/share/elasticsearch/data to elasticsearch
-	chown -R elasticsearch:elasticsearch /usr/share/elasticsearch/data
+	chown -R elasticsearch-user:elasticsearch-user /usr/share/elasticsearch/data
 
-	set -- gosu elasticsearch "$@"
-	#exec gosu elasticsearch "$BASH_SOURCE" "$@"
+	set -- gosu elasticsearch-user "$@"
 fi
 
 # As argument is not related to elasticsearch,
